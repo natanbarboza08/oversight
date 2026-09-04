@@ -1,7 +1,8 @@
-<script setup>
-import HelloWorld from './components/HelloWorld.vue'
-</script>
-
 <template>
-  <HelloWorld />
+  <!-- Deixe APENAS a tag do roteador pura -->
+  <router-view />
 </template>
+
+<style>
+@import "tailwindcss";
+</style>
