@@ -1,9 +1,12 @@
 import { createApp } from 'vue'
-import App from './App.vue'      // Importa o componente da raiz de src/
-import router from './router'    // Importa a pasta router (procura o index.js automaticamente)
-import './style.css'             // Importa o Tailwind CSS
+import { createPinia } from 'pinia'
+import App from './App.vue'
+import router from './router'
+import './style.css'
 
 const app = createApp(App)
 
 app.use(router)
+app.use(createPinia())
+
 app.mount('#app')
