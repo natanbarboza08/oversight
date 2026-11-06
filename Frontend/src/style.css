@@ -1,11 +1,45 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
-
+@import url('https://fonts.googleapis.com/css2?family=BBH+Sans+Bartle&family=Inter:wght@300;400;500;600&family=Unbounded:wght@700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-titulo: 'Inter', sans-serif;
+  /* Cores do design */
+  --color-ink: #000000;
+  --color-fundo: #F2F4FF;
+  --color-verde: #6C756B;
+  --color-borda: #BDBFCD;
+  --color-suave: #6C6C6C;
+  --color-card: #D1DCD3;
+
+  /* Cores da tela de login */
+  --color-escuro: #293619;
+  --color-oliva: #606C3A;
+  --color-oliva-claro: #778649;
+  --color-campo: #EBEBEB;
+  --color-erro: #B3261E;
+
+  /* Cores de apoio do painel (paletas de referência) */
+  --color-aco: #93ACB5;
+  --color-azul: #96C5F7;
+  --color-azul-claro: #A9D3FF;
+  --color-menta: #D0F4DE;
+  --color-argila: #DDA15E;
+  --color-cobre: #BC6C25;
+
+  /* Fontes do design */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Títulos das páginas do design (Home, Login e cadastro) */
+  --font-titulo: 'BBH Sans Bartle', 'Inter', ui-sans-serif, sans-serif;
+  /* Títulos das telas internas do painel (Upload, Relatórios...) */
+  --font-destaque: 'Unbounded', 'Inter', ui-sans-serif, sans-serif;
 }
 
-/* Diga ao Tailwind v4 para escutar todos os arquivos Vue e HTML */
-@source "./**/*.vue";
-@source "./index.html";
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-fundo);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}

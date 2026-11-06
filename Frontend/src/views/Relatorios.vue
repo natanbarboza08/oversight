@@ -1,272 +1,263 @@
-
 <script setup>
+import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { useUploadStore } from '../stores/uploadStore'
+import { useUploadStore, ORDEM_CATEGORIAS } from '../stores/uploadStore'
 
 const uploadStore = useUploadStore()
 
 const {
   arquivo,
   dadosTratados,
+  dataUpload,
   totalLinhas,
   totalValidas,
   totalComErro,
-  linhasComErro
+  linhasComErro,
+  ocorrencias,
+  totalOcorrencias,
+  contagemPorCategoria
 } = storeToRefs(uploadStore)
 
-// Transforma as mensagens da store em itens detalhados para o relatório
-function obterErros() {
-  return linhasComErro.value.flatMap((linha) =>
-    linha.erros.map((mensagem) => {
-      let categoria = 'Outros problemas'
-      let campo = 'Não identificado'
+// Filtro do detalhamento ('' = todas as categorias)
+const categoriaFiltro = ref('')
 
-      // Identifica problemas com espaços desnecessários
-      if (mensagem.includes('Espaços desnecessários')) {
-        categoria = 'Espaços desnecessários'
-        campo = mensagem.split('campo ')[1]?.replace(/\.$/, '') ||
-          'Não identificado'
-      }
+const percentualValidos = computed(() =>
+  totalLinhas.value ? Math.round((totalValidas.value / totalLinhas.value) * 100) : 0
+)
 
-      // Identifica e-mails inválidos
-      else if (mensagem.startsWith('E-mail inválido')) {
-        categoria = 'E-mails inválidos'
-        const resultado = mensagem.match(/campo ([^:]+):/)
-        campo = resultado ? resultado[1] : 'email'
-      }
+// Maior quantidade entre as categorias, para dimensionar as barras
+const maiorContagem = computed(() =>
+  Math.max(1, ...Object.values(contagemPorCategoria.value))
+)
 
-      // Identifica registros duplicados
-      else if (mensagem.includes('duplicado')) {
-        categoria = 'Registros duplicados'
-        campo = 'codigo_cliente'
-      }
+const ocorrenciasFiltradas = computed(() =>
+  categoriaFiltro.value
+    ? ocorrencias.value.filter((item) => item.categoria === categoriaFiltro.value)
+    : ocorrencias.value
+)
 
-      // Identifica campos obrigatórios vazios
-      else if (mensagem.includes('está em branco')) {
-        categoria = 'Campos vazios'
-        campo = mensagem.split(' ')[0]
-      }
-
-      // Identifica dados fora do padrão
-      else if (
-        mensagem.includes('inválido') ||
-        mensagem.includes('inválida') ||
-        mensagem.includes('fora do padrão')
-      ) {
-        categoria = 'Dados fora do padrão'
-
-        if (mensagem.includes('segmento fora do padrão')) {
-          campo = 'segmento'
-        } else if (mensagem.includes('data_contratacao fora do padrão')) {
-          campo = 'data_contratacao'
-        } else {
-          campo = mensagem.split(' ')[0]
-        }
-      }
-
-      return {
-        linha: linha.numero_linha,
-        campo,
-        categoria,
-        descricao: mensagem
-      }
-    })
-  )
+function larguraBarra(categoria) {
+  return `${(contagemPorCategoria.value[categoria] / maiorContagem.value) * 100}%`
 }
 
-// Categorias apresentadas no relatório
-const categorias = [
-  'Campos vazios',
-  'Espaços desnecessários',
-  'Registros duplicados',
-  'E-mails inválidos',
-  'Dados fora do padrão',
-  'Outros problemas'
-]
-
-// Calcula a quantidade de erros de cada categoria
-function quantidadePorCategoria(categoria) {
-  return obterErros().filter(
-    erro => erro.categoria === categoria
-  ).length
-}
-
-const formatarData = (data) => {
+function formatarData(data) {
   if (!data) return ''
   return new Date(data).toLocaleString('pt-BR')
 }
 </script>
 
 <template>
-  <main class="min-h-screen bg-slate-100 px-4 py-8 text-slate-800 sm:px-8">
-    <div class="mx-auto max-w-7xl">
+  <div class="mx-auto max-w-7xl">
+    <!-- Cabeçalho -->
+    <header class="mb-8">
+      <h1 class="font-destaque text-2xl font-bold uppercase leading-tight sm:text-3xl">
+        Relatório de validação
+      </h1>
 
-      <!-- Cabeçalho -->
-      <header class="mb-8">
-        <p class="mb-2 text-sm font-semibold uppercase tracking-wider text-blue-600">
-          CTI Provedor
-        </p>
+      <p class="mt-3 max-w-2xl text-lg text-suave">
+        Consulte os resultados da análise e os problemas encontrados na planilha.
+      </p>
+    </header>
 
-        <h1 class="text-3xl font-bold sm:text-4xl">
-          Relatório de validação
-        </h1>
+    <!-- Quando ainda não há dados -->
+    <section
+      v-if="dadosTratados.length === 0"
+      class="rounded-2xl border border-borda bg-white p-10 text-center"
+    >
+      <h2 class="text-xl font-semibold">Nenhuma análise disponível</h2>
 
-        <p class="mt-3 text-slate-500">
-          Consulte os resultados da análise e os problemas encontrados na planilha.
-        </p>
-      </header>
+      <p class="mx-auto mt-2 max-w-lg text-suave">
+        Envie uma planilha na tela de upload para gerar o relatório de validação.
+      </p>
 
-      <!-- Quando ainda não há dados -->
-      <section
-        v-if="dadosTratados.length === 0"
-        class="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm"
+      <RouterLink
+        to="/app/upload"
+        class="mt-6 inline-flex h-12 items-center rounded-lg bg-escuro px-6 text-white transition hover:bg-oliva"
       >
-        <h2 class="text-xl font-semibold">Nenhuma análise disponível</h2>
+        Ir para upload
+      </RouterLink>
+    </section>
 
-        <p class="mx-auto mt-2 max-w-lg text-slate-500">
-          Envie uma planilha na tela de upload para gerar o relatório de validação.
+    <template v-else>
+      <!-- Informações do arquivo -->
+      <section class="mb-8 rounded-2xl border border-borda bg-white p-6">
+        <h2 class="text-lg font-semibold">Arquivo analisado</h2>
+
+        <p class="mt-2 break-all text-suave">
+          {{ arquivo?.name || 'Nome não disponível' }}
         </p>
 
-        <RouterLink
-          to="/app/upload"
-          class="mt-6 inline-block rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
-        >
-          Ir para upload
-        </RouterLink>
+        <p class="mt-1 text-sm text-suave">
+          Análise realizada em: {{ formatarData(dataUpload) }}
+        </p>
       </section>
 
-      <template v-else>
-        <!-- Informações do arquivo -->
-        <section class="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 class="text-lg font-semibold">Arquivo analisado</h2>
+      <!-- Indicadores -->
+      <section class="mb-8">
+        <h2 class="mb-4 text-xl font-semibold">Resumo da validação</h2>
 
-          <p class="mt-2 break-all text-slate-600">
-            {{ arquivo?.name || 'Nome não disponível' }}
-          </p>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <article class="rounded-xl border border-borda border-t-4 border-t-azul bg-white p-5">
+            <p class="text-sm font-medium text-suave">Total de registros</p>
+            <p class="mt-2 text-3xl font-bold">{{ totalLinhas }}</p>
+          </article>
 
-          <p class="mt-1 text-sm text-slate-400">
-            Análise realizada em: {{ formatarData(uploadStore.dataUpload) }}
-          </p>
-        </section>
+          <article class="rounded-xl border border-borda border-t-4 border-t-oliva bg-white p-5">
+            <p class="text-sm font-medium text-suave">Registros válidos</p>
+            <p class="mt-2 text-3xl font-bold text-oliva">{{ totalValidas }}</p>
+          </article>
 
-        <!-- Indicadores -->
-        <section class="mb-8">
-          <h2 class="mb-4 text-xl font-semibold">Resumo da validação</h2>
+          <article class="rounded-xl border border-borda border-t-4 border-t-cobre bg-white p-5">
+            <p class="text-sm font-medium text-suave">Registros com erros</p>
+            <p class="mt-2 text-3xl font-bold text-erro">{{ totalComErro }}</p>
+          </article>
+        </div>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p class="text-sm text-slate-500">Total de registros</p>
-              <p class="mt-2 text-3xl font-bold">{{ totalLinhas }}</p>
-            </article>
-
-            <article class="rounded-xl border border-emerald-200 bg-white p-5 shadow-sm">
-              <p class="text-sm text-emerald-700">Registros válidos</p>
-              <p class="mt-2 text-3xl font-bold text-emerald-600">
-                {{ totalValidas }}
-              </p>
-            </article>
-
-            <article class="rounded-xl border border-red-200 bg-white p-5 shadow-sm">
-              <p class="text-sm text-red-700">Registros com erros</p>
-              <p class="mt-2 text-3xl font-bold text-red-600">
-                {{ totalComErro }}
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <!-- Quantidade por tipo de erro -->
-        <section class="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 class="mb-5 text-xl font-semibold">Erros por categoria</h2>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead class="border-b border-slate-200 bg-slate-50">
-                <tr>
-                  <th class="px-4 py-3">Tipo de validação</th>
-                  <th class="px-4 py-3 text-right">Quantidade de erros</th>
-                </tr>
-              </thead>
-
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="categoria in categorias" :key="categoria">
-                  <td class="px-4 py-3">{{ categoria }}</td>
-                  <td class="px-4 py-3 text-right font-semibold">
-                    {{ quantidadePorCategoria(categoria) }}
-                  </td>
-                </tr>
-
-                <tr class="bg-slate-50">
-                  <td class="px-4 py-3 font-semibold">Total de ocorrências</td>
-                  <td class="px-4 py-3 text-right font-bold">
-                    {{ obterErros().length }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        <!-- Percentual de registros válidos -->
+        <div class="mt-4 rounded-xl border border-borda bg-white p-5">
+          <div class="flex items-baseline justify-between">
+            <p class="text-sm font-medium text-suave">Registros sem nenhum erro</p>
+            <p class="text-lg font-bold">{{ percentualValidos }}%</p>
           </div>
 
-          <p class="mt-4 text-xs text-slate-400">
-            Uma mesma linha pode conter mais de um erro. Por isso, o total de
-            ocorrências pode ser maior que o número de registros com erros.
-          </p>
-        </section>
+          <div
+            class="mt-3 h-3 overflow-hidden rounded-full bg-campo"
+            role="progressbar"
+            aria-label="Percentual de registros válidos"
+            :aria-valuenow="percentualValidos"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div
+              class="h-full rounded-full bg-oliva transition-all"
+              :style="{ width: percentualValidos + '%' }"
+            ></div>
+          </div>
+        </div>
+      </section>
 
-        <!-- Detalhamento -->
-        <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div class="border-b border-slate-200 p-6">
+      <!-- Quantidade por tipo de erro -->
+      <section class="mb-8 rounded-2xl border border-borda bg-white p-6">
+        <h2 class="mb-5 text-xl font-semibold">Erros por categoria</h2>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="border-b border-borda bg-fundo">
+              <tr>
+                <th class="px-4 py-3">Tipo de validação</th>
+                <th class="hidden px-4 py-3 sm:table-cell"></th>
+                <th class="px-4 py-3 text-right">Quantidade de erros</th>
+              </tr>
+            </thead>
+
+            <tbody class="divide-y divide-campo">
+              <tr v-for="categoria in ORDEM_CATEGORIAS" :key="categoria">
+                <td class="px-4 py-3">{{ categoria }}</td>
+
+                <td class="hidden w-1/3 px-4 py-3 sm:table-cell">
+                  <div class="h-2 overflow-hidden rounded-full bg-campo">
+                    <div
+                      class="h-full rounded-full bg-cobre"
+                      :style="{ width: larguraBarra(categoria) }"
+                    ></div>
+                  </div>
+                </td>
+
+                <td class="px-4 py-3 text-right font-semibold">
+                  {{ contagemPorCategoria[categoria] }}
+                </td>
+              </tr>
+
+              <tr class="bg-fundo">
+                <td class="px-4 py-3 font-semibold">Total de ocorrências</td>
+                <td class="hidden sm:table-cell"></td>
+                <td class="px-4 py-3 text-right font-bold">{{ totalOcorrencias }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="mt-4 text-xs text-suave">
+          Uma mesma linha pode conter mais de um erro. Por isso, o total de ocorrências pode ser
+          maior que o número de registros com erros.
+        </p>
+      </section>
+
+      <!-- Detalhamento -->
+      <section class="overflow-hidden rounded-2xl border border-borda bg-white">
+        <div
+          class="flex flex-col gap-4 border-b border-borda p-6 sm:flex-row sm:items-end sm:justify-between"
+        >
+          <div>
             <h2 class="text-xl font-semibold">Detalhamento das inconsistências</h2>
 
-            <p class="mt-1 text-sm text-slate-500">
+            <p class="mt-1 text-sm text-suave">
               Cada ocorrência mostra a linha, o campo e a descrição do problema.
             </p>
           </div>
 
-          <div v-if="linhasComErro.length === 0" class="p-8 text-center">
-            <p class="font-semibold text-emerald-700">
-              Nenhum erro encontrado!
-            </p>
-            <p class="mt-1 text-sm text-slate-500">
-              Todos os registros passaram nas validações implementadas.
-            </p>
+          <div v-if="linhasComErro.length > 0">
+            <label for="filtro" class="block text-sm text-suave">Filtrar por categoria</label>
+            <select
+              id="filtro"
+              v-model="categoriaFiltro"
+              class="mt-1 h-11 w-full rounded-lg border border-campo bg-white px-3 text-sm outline-none focus:border-oliva sm:w-60"
+            >
+              <option value="">Todas as categorias</option>
+              <option v-for="categoria in ORDEM_CATEGORIAS" :key="categoria" :value="categoria">
+                {{ categoria }} ({{ contagemPorCategoria[categoria] }})
+              </option>
+            </select>
           </div>
-
-          <div v-else class="overflow-x-auto">
-            <table class="w-full min-w-[700px] text-left text-sm">
-              <thead class="bg-slate-50 text-slate-600">
-                <tr>
-                  <th class="px-4 py-3">Linha</th>
-                  <th class="px-4 py-3">Campo</th>
-                  <th class="px-4 py-3">Categoria</th>
-                  <th class="px-4 py-3">Descrição do erro</th>
-                </tr>
-              </thead>
-
-              <tbody class="divide-y divide-slate-100">
-                <tr
-                  v-for="(item, indice) in obterErros()"
-                  :key="indice"
-                  class="align-top hover:bg-slate-50"
-                >
-                  <td class="px-4 py-3">{{ item.linha }}</td>
-                  <td class="px-4 py-3 font-medium">{{ item.campo }}</td>
-                  <td class="px-4 py-3">{{ item.categoria }}</td>
-                  <td class="px-4 py-3 text-red-700">{{ item.descricao }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <div class="mt-6">
-          <RouterLink
-            to="/app/upload"
-            class="inline-block rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700"
-          >
-            Voltar para upload
-          </RouterLink>
         </div>
-      </template>
-    </div>
-  </main>
+
+        <div v-if="linhasComErro.length === 0" class="p-8 text-center">
+          <p class="font-semibold text-oliva">Nenhum erro encontrado!</p>
+          <p class="mt-1 text-sm text-suave">
+            Todos os registros passaram nas validações implementadas.
+          </p>
+        </div>
+
+        <div v-else-if="ocorrenciasFiltradas.length === 0" class="p-8 text-center">
+          <p class="text-sm text-suave">Nenhuma ocorrência nesta categoria.</p>
+        </div>
+
+        <div v-else class="max-h-[560px] overflow-auto">
+          <table class="w-full min-w-[700px] text-left text-sm">
+            <thead class="sticky top-0 bg-menta text-escuro">
+              <tr>
+                <th class="px-4 py-3">Linha</th>
+                <th class="px-4 py-3">Campo</th>
+                <th class="px-4 py-3">Categoria</th>
+                <th class="px-4 py-3">Descrição do erro</th>
+              </tr>
+            </thead>
+
+            <tbody class="divide-y divide-campo">
+              <tr
+                v-for="(item, indice) in ocorrenciasFiltradas"
+                :key="indice"
+                class="align-top hover:bg-fundo"
+              >
+                <td class="px-4 py-3">{{ item.linha }}</td>
+                <td class="px-4 py-3 font-medium">{{ item.campo }}</td>
+                <td class="px-4 py-3">{{ item.categoria }}</td>
+                <td class="px-4 py-3 text-erro">{{ item.mensagem }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="mt-6">
+        <RouterLink
+          to="/app/upload"
+          class="inline-flex h-12 items-center rounded-lg bg-escuro px-6 text-white transition hover:bg-oliva"
+        >
+          Voltar para upload
+        </RouterLink>
+      </div>
+    </template>
+  </div>
 </template>

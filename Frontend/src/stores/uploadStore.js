@@ -1,6 +1,35 @@
-
 import { defineStore } from 'pinia'
 import * as XLSX from 'xlsx'
+
+// Colunas que precisam existir na planilha.
+// O e-mail é opcional: aceita a coluna "email_cliente" ou "email".
+export const COLUNAS_OBRIGATORIAS = [
+  'codigo_cliente',
+  'nome_cliente',
+  'consultor',
+  'segmento',
+  'nivel_cliente',
+  'faturamento_anual',
+  'servicos_contratados',
+  'data_contratacao',
+  'cidade',
+  'uf'
+]
+
+// Categorias usadas no relatório de validação
+export const CATEGORIAS = {
+  VAZIO: 'Campos vazios',
+  ESPACOS: 'Espaços desnecessários',
+  DUPLICADO: 'Registros duplicados',
+  EMAIL: 'E-mails inválidos',
+  PADRAO: 'Dados fora do padrão',
+  OUTROS: 'Outros problemas'
+}
+
+export const ORDEM_CATEGORIAS = Object.values(CATEGORIAS)
+
+// Colunas internas, que não fazem parte da planilha original
+const COLUNAS_INTERNAS = ['erros', 'ocorrencias', 'numero_linha']
 
 export const useUploadStore = defineStore('upload', {
   // STATE: informações armazenadas temporariamente
@@ -16,20 +45,16 @@ export const useUploadStore = defineStore('upload', {
   getters: {
     totalLinhas: (state) => state.dadosTratados.length,
 
-    totalColunas: (state) => {
-      if (!state.dadosTratados.length) return 0
-
-      return Object.keys(state.dadosTratados[0]).filter(
-        coluna => coluna !== 'erros' && coluna !== 'numero_linha'
-      ).length
-    },
-
     colunas: (state) => {
       if (!state.dadosTratados.length) return []
 
       return Object.keys(state.dadosTratados[0]).filter(
-        coluna => coluna !== 'erros' && coluna !== 'numero_linha'
+        coluna => !COLUNAS_INTERNAS.includes(coluna)
       )
+    },
+
+    totalColunas() {
+      return this.colunas.length
     },
 
     totalValidas: (state) =>
@@ -42,7 +67,33 @@ export const useUploadStore = defineStore('upload', {
       state.dadosTratados.filter(linha => linha.erros.length > 0),
 
     linhasValidas: (state) =>
-      state.dadosTratados.filter(linha => linha.erros.length === 0)
+      state.dadosTratados.filter(linha => linha.erros.length === 0),
+
+    // Lista única de ocorrências: { linha, campo, categoria, mensagem }
+    ocorrencias: (state) =>
+      state.dadosTratados.flatMap(linha =>
+        linha.ocorrencias.map(ocorrencia => ({
+          linha: linha.numero_linha,
+          ...ocorrencia
+        }))
+      ),
+
+    totalOcorrencias() {
+      return this.ocorrencias.length
+    },
+
+    // Quantidade de ocorrências por categoria (todas as categorias, mesmo com zero)
+    contagemPorCategoria() {
+      const contagem = Object.fromEntries(
+        ORDEM_CATEGORIAS.map(categoria => [categoria, 0])
+      )
+
+      for (const ocorrencia of this.ocorrencias) {
+        contagem[ocorrencia.categoria]++
+      }
+
+      return contagem
+    }
   },
 
   // ACTIONS: leitura, tratamento e validação da planilha
@@ -78,6 +129,18 @@ export const useUploadStore = defineStore('upload', {
           return
         }
 
+        // Avisa claramente quando faltam colunas, em vez de marcar todas as linhas como erro
+        const colunasDaPlanilha = Object.keys(this.dadosOriginais[0])
+        const faltando = COLUNAS_OBRIGATORIAS.filter(
+          coluna => !colunasDaPlanilha.includes(coluna)
+        )
+
+        if (faltando.length) {
+          this.erro =
+            `A planilha não tem as colunas obrigatórias: ${faltando.join(', ')}.`
+          return
+        }
+
         this.tratarDados()
       } catch (error) {
         console.error(error)
@@ -91,13 +154,24 @@ export const useUploadStore = defineStore('upload', {
       this.dadosTratados = this.dadosOriginais.map((linha, indice) => {
         const novaLinha = {}
         const erros = []
+        const ocorrencias = []
         const numeroLinha = indice + 2
+
+        // Registra o problema com categoria e campo, e guarda a mensagem em "erros"
+        const registrar = (categoria, campo, mensagem) => {
+          ocorrencias.push({ categoria, campo, mensagem })
+          erros.push(mensagem)
+        }
 
         // Verifica espaços desnecessários antes de tratar os textos
         for (const [chave, valor] of Object.entries(linha)) {
           if (typeof valor === 'string') {
             if (/^\s|\s$|\s{2,}/.test(valor)) {
-              erros.push(`Espaços desnecessários no campo ${chave}.`)
+              registrar(
+                CATEGORIAS.ESPACOS,
+                chave,
+                `Espaços desnecessários no campo ${chave}.`
+              )
             }
 
             // Remove espaços das extremidades e repetições
@@ -119,18 +193,26 @@ export const useUploadStore = defineStore('upload', {
           novaLinha.codigo_cliente === null ||
           novaLinha.codigo_cliente === undefined
         ) {
-          erros.push('codigo_cliente está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'codigo_cliente',
+            'codigo_cliente está em branco.'
+          )
         } else {
           const padrao = /^CTI\d{3}$/
 
           if (!padrao.test(novaLinha.codigo_cliente)) {
-            erros.push(
+            registrar(
+              CATEGORIAS.PADRAO,
+              'codigo_cliente',
               'codigo_cliente inválido. Use CTI001, CTI002...'
             )
           }
 
           if (codigosEncontrados.has(novaLinha.codigo_cliente)) {
-            erros.push(
+            registrar(
+              CATEGORIAS.DUPLICADO,
+              'codigo_cliente',
               `codigo_cliente duplicado: ${novaLinha.codigo_cliente}.`
             )
           } else {
@@ -143,7 +225,11 @@ export const useUploadStore = defineStore('upload', {
           !novaLinha.nome_cliente ||
           String(novaLinha.nome_cliente).trim() === ''
         ) {
-          erros.push('nome_cliente está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'nome_cliente',
+            'nome_cliente está em branco.'
+          )
         }
 
         // Valida o consultor
@@ -151,7 +237,11 @@ export const useUploadStore = defineStore('upload', {
           !novaLinha.consultor ||
           String(novaLinha.consultor).trim() === ''
         ) {
-          erros.push('consultor está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'consultor',
+            'consultor está em branco.'
+          )
         }
 
         // Valida e padroniza o e-mail, caso a coluna exista
@@ -170,11 +260,17 @@ export const useUploadStore = defineStore('upload', {
           ).trim().toLowerCase()
 
           if (!email) {
-            erros.push(`${campoEmail} está em branco.`)
+            registrar(
+              CATEGORIAS.VAZIO,
+              campoEmail,
+              `${campoEmail} está em branco.`
+            )
           } else if (
             !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
           ) {
-            erros.push(
+            registrar(
+              CATEGORIAS.EMAIL,
+              campoEmail,
               `E-mail inválido no campo ${campoEmail}: ${email}.`
             )
           }
@@ -187,7 +283,11 @@ export const useUploadStore = defineStore('upload', {
           !novaLinha.segmento ||
           String(novaLinha.segmento).trim() === ''
         ) {
-          erros.push('segmento está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'segmento',
+            'segmento está em branco.'
+          )
         } else {
           const segmento = String(novaLinha.segmento).toUpperCase()
 
@@ -211,7 +311,9 @@ export const useUploadStore = defineStore('upload', {
           if (mapaSegmentos[segmento]) {
             novaLinha.segmento = mapaSegmentos[segmento]
           } else {
-            erros.push(
+            registrar(
+              CATEGORIAS.PADRAO,
+              'segmento',
               `segmento fora do padrão: ${novaLinha.segmento}.`
             )
           }
@@ -224,22 +326,32 @@ export const useUploadStore = defineStore('upload', {
         }
 
         if (!novaLinha.nivel_cliente) {
-          erros.push('nivel_cliente está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'nivel_cliente',
+            'nivel_cliente está em branco.'
+          )
         } else if (
           !['A', 'B', 'C'].includes(novaLinha.nivel_cliente)
         ) {
-          erros.push(
+          registrar(
+            CATEGORIAS.PADRAO,
+            'nivel_cliente',
             `nivel_cliente inválido: ${novaLinha.nivel_cliente}. Permitido somente A, B ou C.`
           )
         }
 
-        // Valida o faturamento anual
+        // Valida o faturamento anual (guardado como número, para cálculos e gráficos)
         if (
           novaLinha.faturamento_anual === '' ||
           novaLinha.faturamento_anual === null ||
           novaLinha.faturamento_anual === undefined
         ) {
-          erros.push('faturamento_anual está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'faturamento_anual',
+            'faturamento_anual está em branco.'
+          )
         } else {
           let valor = novaLinha.faturamento_anual
 
@@ -255,15 +367,14 @@ export const useUploadStore = defineStore('upload', {
           const numero = Number(valor)
 
           if (!Number.isFinite(numero)) {
-            erros.push('faturamento_anual inválido.')
-          } else {
-            novaLinha.faturamento_anual = numero.toLocaleString(
-              'pt-BR',
-              {
-                style: 'currency',
-                currency: 'BRL'
-              }
+            registrar(
+              CATEGORIAS.PADRAO,
+              'faturamento_anual',
+              'faturamento_anual inválido.'
             )
+          } else {
+            // A formatação em reais é feita só na hora de exibir
+            novaLinha.faturamento_anual = numero
           }
         }
 
@@ -272,12 +383,20 @@ export const useUploadStore = defineStore('upload', {
           !novaLinha.servicos_contratados ||
           String(novaLinha.servicos_contratados).trim() === ''
         ) {
-          erros.push('servicos_contratados está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'servicos_contratados',
+            'servicos_contratados está em branco.'
+          )
         }
 
         // Valida a data de contratação
         if (!novaLinha.data_contratacao) {
-          erros.push('data_contratacao está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'data_contratacao',
+            'data_contratacao está em branco.'
+          )
         } else {
           const valorData = novaLinha.data_contratacao
 
@@ -291,13 +410,19 @@ export const useUploadStore = defineStore('upload', {
               novaLinha.data_contratacao =
                 `${dia}/${mes}/${data.y}`
             } else {
-              erros.push('data_contratacao inválida.')
+              registrar(
+                CATEGORIAS.PADRAO,
+                'data_contratacao',
+                'data_contratacao inválida.'
+              )
             }
           } else if (typeof valorData === 'string') {
             const padraoData = /^\d{2}\/\d{2}\/\d{4}$/
 
             if (!padraoData.test(valorData)) {
-              erros.push(
+              registrar(
+                CATEGORIAS.PADRAO,
+                'data_contratacao',
                 'data_contratacao fora do padrão. Use DD/MM/AAAA.'
               )
             } else {
@@ -311,7 +436,11 @@ export const useUploadStore = defineStore('upload', {
                 data.getMonth() !== mes - 1 ||
                 data.getDate() !== dia
               ) {
-                erros.push('data_contratacao inválida.')
+                registrar(
+                  CATEGORIAS.PADRAO,
+                  'data_contratacao',
+                  'data_contratacao inválida.'
+                )
               }
             }
           }
@@ -322,7 +451,11 @@ export const useUploadStore = defineStore('upload', {
           !novaLinha.cidade ||
           String(novaLinha.cidade).trim() === ''
         ) {
-          erros.push('cidade está em branco.')
+          registrar(
+            CATEGORIAS.VAZIO,
+            'cidade',
+            'cidade está em branco.'
+          )
         } else if (typeof novaLinha.cidade === 'string') {
           novaLinha.cidade = novaLinha.cidade
             .toLowerCase()
@@ -335,14 +468,15 @@ export const useUploadStore = defineStore('upload', {
         }
 
         if (!novaLinha.uf) {
-          erros.push('uf está em branco.')
+          registrar(CATEGORIAS.VAZIO, 'uf', 'uf está em branco.')
         } else if (!/^[A-Z]{2}$/.test(novaLinha.uf)) {
-          erros.push('uf inválida.')
+          registrar(CATEGORIAS.PADRAO, 'uf', 'uf inválida.')
         }
 
-        // Guarda o número da linha e os erros encontrados
+        // Guarda o número da linha e os problemas encontrados
         novaLinha.numero_linha = numeroLinha
         novaLinha.erros = erros
+        novaLinha.ocorrencias = ocorrencias
 
         return novaLinha
       })
