@@ -1,6 +1,5 @@
 <template>
-  <!-- Deixe APENAS a tag do roteador pura -->
-  <router-view />
+  <RouterView />
 </template>
 
 <style>

@@ -1,17 +1,18 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import PainelBoasVindas from '../components/PainelBoasVindas.vue'
 import CampoForm from '../components/CampoForm.vue'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const email = ref('')
 const senha = ref('')
 const lembrar = ref(false)
 
 const erros = reactive({ email: '', senha: '' })
-// Erro vindo do backend (ex: "E-mail ou senha incorretos.")
 const erroGeral = ref('')
 
 const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -32,10 +33,16 @@ function validar() {
 // Por enquanto só navega para o painel.
 // Quando o backend existir, chamar aqui a store/service de autenticação
 // e, em caso de falha, preencher `erroGeral.value`.
-function entrar() {
+async function entrar() {
   erroGeral.value = ''
   if (!validar()) return
-  router.push('/app')
+
+  try {
+    await auth.entrar(email.value.trim(), senha.value)
+    router.push('/app/upload')
+  } catch (erro) {
+    erroGeral.value = erro?.response?.data?.erro || 'E-mail ou senha incorretos.'
+  }
 }
 </script>
 
