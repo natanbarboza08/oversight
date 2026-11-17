@@ -1,50 +1,72 @@
-package com.senai.oversight.controller;                     // pacote desta classe
-// ============================================================================
-//Porta de entrada do login.
-// POST /auth/register (cadastro), POST /auth/login (token), GET /auth/me e GET /health.
-// Chama: AuthService.
-// ============================================================================
+package com.senai.oversight.controller;
 
-import com.senai.oversight.service.AuthService;                       // import: o serviço AuthService
-import com.senai.oversight.dto.AuthDtos.*;                                        // import: os formatos de entrada/saída (CadastroRequest...)
-import com.senai.oversight.dto.UsuarioDto;                                     // import: DTO do usuário
-import com.senai.oversight.service.UsuarioService;                                 // import: serviço de usuários
-import jakarta.validation.Valid;                                                    // import: @Valid ativa as validações do DTO
-import java.util.Map;                                                               // import: tipo mapa
-import org.springframework.http.HttpStatus;                                         // import: códigos HTTP
-import org.springframework.security.core.Authentication;                            // import: usuário logado
-import org.springframework.web.bind.annotation.*;                                   // import: anotações do Spring MVC
+import com.senai.oversight.dto.AuthDtos.CadastroRequest;
+import com.senai.oversight.dto.AuthDtos.LoginRequest;
+import com.senai.oversight.dto.AuthDtos.LoginResponse;
+import com.senai.oversight.dto.AuthDtos.MensagemResponse;
+import com.senai.oversight.dto.UsuarioDto;
+import com.senai.oversight.service.AuthService;
+import com.senai.oversight.service.UsuarioService;
+import jakarta.validation.Valid;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
-@RestController                                                                     // controller REST de cadastro e login
-@RequestMapping("/api")                                                             // rotas começam com /api
-public class AuthController {                                                       // classe do controller
-    private final AuthService auth;                                                 // serviço com a regra de cadastro/login
-    private final UsuarioService usuarios;                                          // serviço de usuários
+@RestController
+@RequestMapping("/api")
+public class AuthController {
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+    private final AuthService auth;
+    private final UsuarioService usuarios;
+    private final JdbcTemplate jdbc;
 
-    public AuthController(AuthService auth, UsuarioService usuarios) {              // construtor: o Spring entrega os serviços
-        this.auth = auth;                                                           // guarda o serviço de autenticação
-        this.usuarios = usuarios;                                                   // guarda o serviço de usuários
-    }                                                                               // fecha o bloco
+    public AuthController(AuthService auth, UsuarioService usuarios, JdbcTemplate jdbc) {
+        this.auth = auth;
+        this.usuarios = usuarios;
+        this.jdbc = jdbc;
+    }
 
-    @PostMapping("/auth/register")                                                  // POST /api/auth/register: cria conta
-    @ResponseStatus(HttpStatus.CREATED)                                             // responde 201 (criado)
-    public MensagemResponse cadastrar(@Valid @RequestBody CadastroRequest req) {    // @Valid confere os campos; @RequestBody lê o JSON
-        return auth.cadastrar(req);                                                 // cria o usuário como PENDENTE
-    }                                                                               // fecha o bloco
+    @PostMapping("/auth/register")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MensagemResponse cadastrar(@Valid @RequestBody CadastroRequest req) {
+        return auth.cadastrar(req);
+    }
 
-    @PostMapping("/auth/login")                                                     // POST /api/auth/login: entra
-    public LoginResponse entrar(@Valid @RequestBody LoginRequest req) {             // lê e valida o JSON { email, senha }
-        return auth.entrar(req);                                                    // confere a senha e devolve o token JWT
-    }                                                                               // fecha o bloco
+    @PostMapping("/auth/login")
+    public LoginResponse entrar(@Valid @RequestBody LoginRequest req) {
+        return auth.entrar(req);
+    }
 
-    @GetMapping("/auth/me")                                                         // GET /api/auth/me: quem sou eu
-    public UsuarioDto eu(Authentication authentication) {                           // authentication vem do token enviado
-        return UsuarioDto.de(usuarios.atual(authentication));                       // devolve os dados do usuário logado
-    }                                                                               // fecha o bloco
+    @GetMapping("/auth/me")
+    public UsuarioDto eu(Authentication authentication) {
+        return UsuarioDto.de(usuarios.atual(authentication));
+    }
 
-    /** Para testar se o servidor está no ar. */
-    @GetMapping("/health")                                                          // GET /api/health
-    public Map<String, String> saude() {                                            // método da rota de saúde
-        return Map.of("status", "ok");                                              // devolve { "status": "ok" }
-    }                                                                               // fecha o bloco
-}                                                                                   // fecha o bloco
+    @GetMapping("/health")
+    public Map<String, String> saude() {
+        return Map.of("status", "ok");
+    }
+
+    @GetMapping("/ready")
+    public ResponseEntity<Map<String, String>> pronto() {
+        try {
+            jdbc.queryForObject("SELECT 1", Integer.class);
+            return ResponseEntity.ok(Map.of("status", "ok", "database", "ok"));
+        } catch (DataAccessException erro) {
+            log.error("Verificação de prontidão do banco falhou.", erro);
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("status", "indisponivel", "database", "indisponivel"));
+        }
+    }
+}

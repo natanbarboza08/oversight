@@ -22,6 +22,12 @@ const itens = [
     to: '/app/graficos',
     icone: 'M4 20h16M7 16v-5M12 16V6M17 16v-8',
   },
+  {
+    texto: 'Usuários',
+    to: '/app/admin/usuarios',
+    icone: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m16-13a4 4 0 11-8 0 4 4 0 018 0zm6 13v-2a4 4 0 00-3-3.87M18 3.13a4 4 0 010 7.75',
+    admin: true,
+  },
 ]
 
 function sair() {
@@ -47,28 +53,29 @@ function sair() {
       </div>
 
       <nav class="flex gap-1 overflow-x-auto lg:flex-col" aria-label="Menu do painel">
-        <RouterLink
-          v-for="item in itens"
-          :key="item.to"
-          :to="item.to"
-          class="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-base transition-colors hover:bg-fundo"
-          active-class="bg-menta font-medium"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.7"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class="h-5 w-5 shrink-0"
-            aria-hidden="true"
+        <template v-for="item in itens" :key="item.to">
+          <RouterLink
+            v-if="!item.admin || auth.ehAdmin"
+            :to="item.to"
+            class="flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-base transition-colors hover:bg-fundo"
+            active-class="bg-menta font-medium"
           >
-            <path :d="item.icone" />
-          </svg>
-          {{ item.texto }}
-        </RouterLink>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="h-5 w-5 shrink-0"
+              aria-hidden="true"
+            >
+              <path :d="item.icone" />
+            </svg>
+            {{ item.texto }}
+          </RouterLink>
+        </template>
       </nav>
 
       <button

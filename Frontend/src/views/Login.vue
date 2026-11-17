@@ -30,16 +30,14 @@ function validar() {
   return !erros.email && !erros.senha
 }
 
-// Por enquanto só navega para o painel.
-// Quando o backend existir, chamar aqui a store/service de autenticação
-// e, em caso de falha, preencher `erroGeral.value`.
 async function entrar() {
   erroGeral.value = ''
   if (!validar()) return
 
   try {
-    await auth.entrar(email.value.trim(), senha.value)
-    router.push('/app/upload')
+    await auth.entrar(email.value.trim(), senha.value, lembrar.value)
+    const destino = router.currentRoute.value.query.redirect
+    router.push(typeof destino === 'string' && destino.startsWith('/') ? destino : '/app/upload')
   } catch (erro) {
     erroGeral.value = erro?.response?.data?.erro || 'E-mail ou senha incorretos.'
   }

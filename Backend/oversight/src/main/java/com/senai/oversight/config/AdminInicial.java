@@ -10,6 +10,7 @@ import com.senai.oversight.model.StatusUsuario;                       // import:
 import com.senai.oversight.model.Usuario;                             // import: a entidade (tabela) Usuario
 import com.senai.oversight.repository.UsuarioRepository;              // import: o repositório (acesso ao banco) UsuarioRepository
 import com.senai.oversight.service.Datas;                                           // import: nosso conversor de datas
+import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;                                                            // import: Logger = escreve mensagens no terminal
 import org.slf4j.LoggerFactory;                                                     // import: fábrica de Logger
 import org.springframework.boot.ApplicationArguments;                               // import: argumentos de inicialização
@@ -35,7 +36,15 @@ public class AdminInicial implements ApplicationRunner {                        
     @Override                                                                       // sobrescreve o método que o Spring chama ao iniciar
     public void run(ApplicationArguments args) {                                    // método executado na partida
         var cfg = props.admin();                                                    // lê os dados do admin do yml
-        if (cfg == null || cfg.email() == null || cfg.email().isBlank()) return;    // sem e-mail configurado: não cria nada
+        if (cfg == null || cfg.email() == null || cfg.email().isBlank()) {
+            throw new IllegalStateException("ADMIN_EMAIL precisa estar configurado.");
+        }
+        if (cfg.senha() == null || cfg.senha().isBlank()) {
+            throw new IllegalStateException("ADMIN_PASSWORD precisa estar configurada.");
+        }
+        if (cfg.senha().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new IllegalStateException("ADMIN_PASSWORD não pode ultrapassar 72 bytes.");
+        }
         String email = cfg.email().trim().toLowerCase();                            // e-mail em minúsculo e sem espaços
         if (repo.existsByEmailIgnoreCase(email)) return;                            // admin já existe: não cria de novo
 
@@ -47,6 +56,6 @@ public class AdminInicial implements ApplicationRunner {                        
         admin.setStatus(StatusUsuario.APROVADO);                                    // já nasce APROVADO
         admin.setCriadoEm(Datas.agoraUtc());                                        // data de criação
         repo.save(admin);                                                           // salva no banco
-        log.warn("Administrador inicial criado: {} (troque a senha via variável ADMIN_PASSWORD em produção)", email);  // avisa no terminal que o admin foi criado
+        log.info("Administrador inicial criado para a configuração definida no ambiente.");
     }                                                                               // fecha o bloco
 }                                                                                   // fecha o bloco

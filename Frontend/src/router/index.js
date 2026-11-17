@@ -1,40 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
-// Páginas Públicas
-import Home from '../views/Home.vue'
-import Login from '../views/Login.vue'
-import Cadastro from '../views/Cadastro.vue'
-import EsqueciSenha from '../views/EsqueciSenha.vue'
-
-// Layout do Painel e Páginas Internas
-import AppLayout from '../layouts/AppLayout.vue'
-import Upload from '../views/Upload.vue'
-import Relatorios from '../views/Relatorios.vue'
-import Graficos from '../views/Graficos.vue'
-import NotFound from '../views/NotFound.vue'
-
-// MODO DE TESTE TEMPORÁRIO: desativa a proteção de rota até o backend e o banco ficarem prontos.
-// Quando a autenticação real estiver pronta, voltar para false.
-const MODO_TESTE = true
-
 const routes = [
-  { path: '/', name: 'home', component: Home },
-  { path: '/login', name: 'login', component: Login, meta: { soVisitante: true } },
-  { path: '/cadastro', name: 'cadastro', component: Cadastro, meta: { soVisitante: true } },
-  { path: '/esqueci-senha', name: 'esqueciSenha', component: EsqueciSenha },
+  { path: '/', name: 'home', component: () => import('../views/Home.vue') },
+  { path: '/login', name: 'login', component: () => import('../views/Login.vue'), meta: { soVisitante: true } },
+  { path: '/cadastro', name: 'cadastro', component: () => import('../views/Cadastro.vue'), meta: { soVisitante: true } },
+  { path: '/esqueci-senha', name: 'esqueciSenha', component: () => import('../views/EsqueciSenha.vue') },
   {
     path: '/app',
-    component: AppLayout,
+    component: () => import('../layouts/AppLayout.vue'),
     redirect: '/app/upload',
     meta: { requerLogin: true },
     children: [
-      { path: 'upload', name: 'upload', component: Upload },
-      { path: 'relatorios', name: 'relatorios', component: Relatorios },
-      { path: 'graficos', name: 'graficos', component: Graficos },
+      { path: 'upload', name: 'upload', component: () => import('../views/Upload.vue') },
+      { path: 'relatorios', name: 'relatorios', component: () => import('../views/Relatorios.vue') },
+      { path: 'graficos', name: 'graficos', component: () => import('../views/Graficos.vue') },
+      {
+        path: 'admin/usuarios',
+        name: 'adminUsuarios',
+        component: () => import('../views/AdminUsuarios.vue'),
+        meta: { requerAdmin: true },
+      },
     ],
   },
-  { path: '/:pathMatch(.*)*', name: 'naoEncontrada', component: NotFound },
+  { path: '/:pathMatch(.*)*', name: 'naoEncontrada', component: () => import('../views/NotFound.vue') },
 ]
 
 const router = createRouter({
@@ -43,13 +32,17 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
 
-  if (MODO_TESTE) return
+  await auth.validarSessao()
 
   if (to.meta.requerLogin && !auth.logado) {
-    return { name: 'login' }
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.requerAdmin && !auth.ehAdmin) {
+    return { name: 'upload' }
   }
 
   if (to.meta.soVisitante && auth.logado) {

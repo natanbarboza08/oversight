@@ -35,7 +35,7 @@ public class SecurityConfig {                                                   
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))  // sem sessão no servidor: cada pedido traz o token
             .authorizeHttpRequests(auth -> auth                                     // regras por rota:
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()             // o navegador pergunta antes (OPTIONS): sempre liberado
-                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/health").permitAll()  // cadastro, login e health são públicos
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/health", "/api/ready").permitAll()  // rotas públicas
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")                  // /api/admin/** só para ADMIN
                 .anyRequest().authenticated())                                      // todo o resto exige login
             .exceptionHandling(e -> e                                               // respostas de erro de segurança:
@@ -55,7 +55,14 @@ public class SecurityConfig {                                                   
     @Bean                                                                           // bean: regras de CORS
     public CorsConfigurationSource corsConfigurationSource(AppProperties props) {   // quais origens (sites) podem chamar a API
         CorsConfiguration cfg = new CorsConfiguration();                            // cria as regras
-        cfg.setAllowedOrigins(props.cors().origins().stream().map(String::trim).toList());  // lê os endereços permitidos do application.properties
+        List<String> origins = props.cors().origins().stream()
+                .map(String::trim)
+                .filter(origem -> !origem.isEmpty())
+                .toList();
+        if (origins.isEmpty() || origins.contains("*")) {
+            throw new IllegalStateException("CORS_ORIGINS precisa listar origens explícitas.");
+        }
+        cfg.setAllowedOrigins(origins);
         cfg.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));  // métodos HTTP permitidos
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));  // cabeçalhos permitidos (inclui o Authorization do token)
         cfg.setMaxAge(3600L);                                                       // o navegador pode lembrar a resposta por 1 hora

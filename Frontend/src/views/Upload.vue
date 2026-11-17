@@ -16,7 +16,9 @@ const {
   totalValidas,
   totalComErro,
   colunas,
-  linhasComErro
+  linhasComErro,
+  enviando,
+  resultadoEnvio
 } = storeToRefs(uploadStore)
 
 const carregando = ref(false)
@@ -51,6 +53,10 @@ function soltarArquivo(event) {
 
 function limparDados() {
   uploadStore.limpar()
+}
+
+async function enviarDados() {
+  await uploadStore.enviarAoBackend()
 }
 
 // O faturamento fica numérico no store e é formatado em reais só na exibição
@@ -149,6 +155,23 @@ function formatarCelula(coluna, valor) {
         Processando planilha...
       </p>
 
+      <div
+        v-if="resultadoEnvio"
+        class="mt-5 rounded-lg border border-oliva/30 bg-menta/40 p-4 text-sm"
+        role="status"
+      >
+        <p class="font-semibold">Lote enviado e processado</p>
+        <p class="mt-1">
+          {{ resultadoEnvio.linhasValidas }} registros válidos e
+          {{ resultadoEnvio.linhasInvalidas }} inválidos.
+        </p>
+        <ul v-if="resultadoEnvio.rejeitadas?.length" class="mt-3 list-inside list-disc text-erro">
+          <li v-for="(motivo, indice) in resultadoEnvio.rejeitadas" :key="indice">
+            {{ motivo }}
+          </li>
+        </ul>
+      </div>
+
       <!-- Mensagem de erro geral -->
       <div
         v-if="erro"
@@ -173,12 +196,33 @@ function formatarCelula(coluna, valor) {
 
         <button
           type="button"
+          :disabled="enviando"
           class="rounded-lg border border-borda bg-white px-4 py-2 font-medium transition hover:bg-menta"
           @click="limparDados"
         >
           Limpar dados
         </button>
       </div>
+    </section>
+
+    <section
+      v-if="totalValidas > 0 && !resultadoEnvio"
+      class="mt-5 flex flex-col gap-3 rounded-xl border border-borda bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <h2 class="font-semibold">Enviar dados válidos para análise</h2>
+        <p class="mt-1 text-sm text-suave">
+          O backend validará os dados novamente antes de gravar o lote.
+        </p>
+      </div>
+      <button
+        type="button"
+        :disabled="enviando"
+        class="rounded-lg bg-escuro px-5 py-3 font-medium text-white transition hover:bg-oliva disabled:cursor-not-allowed disabled:opacity-60"
+        @click="enviarDados"
+      >
+        {{ enviando ? 'Enviando e analisando...' : `Enviar ${totalValidas} registros` }}
+      </button>
     </section>
 
     <!-- Indicadores -->

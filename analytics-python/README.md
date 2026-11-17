@@ -1,37 +1,20 @@
-# Ciência de dados — Python (pandas + FastAPI)
+# Serviço de análise Python
 
-Recebe do backend as linhas **já validadas** e faz o ETL:
-- **limpeza.py** padroniza (`ana souza` → `Ana Souza`, `IND.` → `Indústria`, texto → número e data)
-- **analise.py** calcula (média, mediana, desvio padrão, totais por segmento, nível, consultor e serviço)
-- **insights.py** escreve as frases
-- **banco.py** grava no PostgreSQL (lote, cliente, segmento, consultor, serviço, contrato e o resultado das contas)
+FastAPI recebe linhas já validadas pelo backend Java, limpa e calcula os indicadores em pandas/SciPy e grava lote, clientes, contratos e resultados no PostgreSQL Neon.
 
-O Python **não devolve dados**: responde só `{"ok": true}`.
+## Desenvolvimento
 
-## Rodar
-```
-cd analytics-python
-python -m venv .venv
-.venv\Scripts\activate            (Mac/Linux: source .venv/bin/activate)
+Copie `.env.example` para `.env`. Configure os dados do Neon (`DB_SSLMODE=require`) e uma `ETL_API_KEY` igual à `ETL_KEY` do Java.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env            (preencha os dados do banco; no Neon veja ../database/README.md)
-uvicorn api:app --port 8000
-```
-Teste: http://localhost:8000/saude → `{"status":"ok"}` e http://localhost:8000/docs (tela de teste; use `/testar` com `amostras/clientes.json`, não grava nada).
-
-## Arquivos
-```
-api.py          recebe o POST /etl e chama o main.py
-main.py         coordena: cria o lote, limpa, calcula e grava
-limpeza.py      limpa e padroniza
-analise.py      faz as contas
-insights.py     escreve as frases
-banco.py        único arquivo que fala com o banco
-config.py       lê o .env
+uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
-## Deploy
-Comando: `uvicorn api:app --host 0.0.0.0 --port $PORT` (rode dentro da pasta `analytics-python`).
-Variáveis: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_SSLMODE=require`, `ETL_API_KEY`.
+`GET /saude` é liveness; `GET /pronto` testa também `SELECT 1` no PostgreSQL. O endpoint `POST /etl` exige a chave `X-ETL-Key`. A documentação OpenAPI e a rota local `POST /testar` ficam desabilitadas por padrão.
 
-Passo a passo completo: `../docs/CIENCIA-DE-DADOS.txt`
+## Railway
+
+Use `analytics-python` como diretório raiz do serviço. O `Dockerfile` instala as dependências e usa a porta fornecida pelo Railway; `railway.json` configura `/pronto`. Defina as variáveis do `.env.example` no Railway, sem colocar credenciais no repositório.

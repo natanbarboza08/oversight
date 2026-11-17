@@ -37,9 +37,14 @@ public class PythonEtlService {                                                 
     private final ObjectMapper json;                                                // lê e escreve JSON
 
     public PythonEtlService(AppProperties props, ObjectMapper json) {               // construtor: o Spring entrega as peças
-        this.url = props.etl() == null || props.etl().url() == null || props.etl().url().isBlank()  // endereço não configurado?
-                ? "http://localhost:8000/etl" : props.etl().url().trim();           // usa o padrão; senão o configurado
-        this.chave = props.etl() == null || props.etl().key() == null ? "" : props.etl().key().trim();  // lê a chave (pode ser vazia)
+        if (props.etl() == null || props.etl().url() == null || props.etl().url().isBlank()) {
+            throw new IllegalStateException("ETL_URL precisa estar configurada.");
+        }
+        this.url = props.etl().url().trim();
+        if (props.etl() == null || props.etl().key() == null || props.etl().key().isBlank()) {
+            throw new IllegalStateException("ETL_KEY precisa estar configurada.");
+        }
+        this.chave = props.etl().key().trim();
         this.json = json;                                                           // guarda o leitor de JSON
     }                                                                               // fecha o bloco
 
@@ -65,7 +70,7 @@ public class PythonEtlService {                                                 
     }                                                                               // fecha o bloco
 
     private void chamar(HttpRequest.Builder req) {                              // chamar: envia o pedido e trata a resposta e os erros
-        if (!chave.isEmpty()) req.header("X-ETL-Key", chave);                       // se há chave, envia no cabeçalho
+        req.header("X-ETL-Key", chave);
         try {                                                                       // tenta falar com o Python
             HttpResponse<String> resp = http.send(req.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));  // ENVIA e espera a resposta
             if (resp.statusCode() != 200) {                                         // o Python respondeu erro?

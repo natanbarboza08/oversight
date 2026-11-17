@@ -1,10 +1,13 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { mensagemDeErro } from '../services/api'
 import PainelBoasVindas from '../components/PainelBoasVindas.vue'
 import CampoForm from '../components/CampoForm.vue'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const nome = ref('')
 const email = ref('')
@@ -15,6 +18,8 @@ const aceito = ref(false)
 const erros = reactive({ nome: '', email: '', senha: '', confirmar: '', aceito: '' })
 // Erro vindo do backend (ex: "Este e-mail já está cadastrado.")
 const erroGeral = ref('')
+const cadastroMensagem = ref('')
+const carregando = ref(false)
 
 const regexEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -33,6 +38,9 @@ function validar() {
 
   if (!senha.value) erros.senha = 'Crie uma senha.'
   else if (senha.value.length < 8) erros.senha = 'A senha precisa ter pelo menos 8 caracteres.'
+  else if (new TextEncoder().encode(senha.value).length > 72) {
+    erros.senha = 'A senha deve ter no máximo 72 bytes.'
+  }
 
   if (!confirmar.value) erros.confirmar = 'Confirme sua senha.'
   else if (confirmar.value !== senha.value) erros.confirmar = 'As senhas não coincidem.'
@@ -42,13 +50,22 @@ function validar() {
   return Object.values(erros).every((e) => !e)
 }
 
-// Por enquanto só navega para o login.
-// Quando o backend existir, chamar aqui o service de cadastro (POST)
-// e, em caso de falha, preencher `erroGeral.value`.
-function cadastrar() {
+async function cadastrar() {
   erroGeral.value = ''
   if (!validar()) return
-  router.push('/login')
+  carregando.value = true
+  try {
+    const resposta = await auth.cadastrar({
+      nome: nome.value.trim(),
+      email: email.value.trim(),
+      senha: senha.value,
+    })
+    cadastroMensagem.value = resposta.mensagem
+  } catch (erro) {
+    erroGeral.value = mensagemDeErro(erro)
+  } finally {
+    carregando.value = false
+  }
 }
 </script>
 
@@ -65,7 +82,23 @@ function cadastrar() {
 
         <h1 class="mt-6 text-[32px] font-bold leading-9">Criar conta</h1>
 
-        <form class="mt-6 flex flex-col gap-5" novalidate @submit.prevent="cadastrar">
+        <div
+          v-if="cadastroMensagem"
+          class="mt-6 rounded-lg border border-oliva/30 bg-white p-5"
+          role="status"
+        >
+          <p class="font-semibold">Cadastro recebido</p>
+          <p class="mt-2 text-suave">{{ cadastroMensagem }}</p>
+          <button
+            type="button"
+            class="mt-5 h-12 w-full rounded-lg bg-escuro text-white transition hover:bg-oliva"
+            @click="router.push('/login')"
+          >
+            Voltar para o login
+          </button>
+        </div>
+
+        <form v-else class="mt-6 flex flex-col gap-5" novalidate @submit.prevent="cadastrar">
           <CampoForm
             id="nome"
             v-model="nome"
@@ -159,9 +192,10 @@ function cadastrar() {
 
           <button
             type="submit"
+            :disabled="carregando"
             class="h-[52px] w-full rounded-lg bg-escuro text-lg text-white transition hover:bg-oliva"
           >
-            Criar conta
+            {{ carregando ? 'Enviando...' : 'Criar conta' }}
           </button>
         </form>
 

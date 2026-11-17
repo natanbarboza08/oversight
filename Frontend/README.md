@@ -1,5 +1,15 @@
-# Vue 3 + Vite
+# Frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Aplicação Vue 3 com Vue Router, Pinia, Tailwind CSS, Axios e Chart.js. As rotas internas exigem JWT; o upload é revalidado pelo backend e o dashboard consulta os lotes persistidos.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Desenvolvimento
+
+```powershell
+Copy-Item .env.example .env
+npm ci
+npm run dev
+```
+
+Configure `VITE_API_URL=http://localhost:8080/api` localmente. Para produção, defina a URL pública do backend Java com `/api` no ambiente de build da Vercel. A pasta `Frontend` é o diretório raiz do projeto Vercel; o `vercel.json` aplica o fallback SPA do Vue Router.
+
+Antes do deploy, valide com `npm run build` e `npm audit --audit-level=high`.

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import * as XLSX from 'xlsx'
+import * as XLSX from '@e965/xlsx'
+import { mensagemDeErro, uploadService } from '../services/api'
 
 // Colunas que precisam existir na planilha.
 // O e-mail é opcional: aceita a coluna "email_cliente" ou "email".
@@ -31,6 +32,32 @@ export const ORDEM_CATEGORIAS = Object.values(CATEGORIAS)
 // Colunas internas, que não fazem parte da planilha original
 const COLUNAS_INTERNAS = ['erros', 'ocorrencias', 'numero_linha']
 
+function numeroMonetario(valor) {
+  if (typeof valor === 'number') return valor
+
+  let texto = String(valor)
+    .replace('R$', '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s/g, '')
+  if (!/^-?[0-9.,]+$/.test(texto)) return Number.NaN
+
+  const ponto = texto.includes('.')
+  const virgula = texto.includes(',')
+  if (ponto && virgula) {
+    texto = texto.lastIndexOf(',') > texto.lastIndexOf('.')
+      ? texto.replace(/\./g, '').replace(',', '.')
+      : texto.replace(/,/g, '')
+  } else if (virgula) {
+    texto = (texto.match(/,/g) || []).length > 1
+      ? texto.replace(/,/g, '')
+      : texto.replace(',', '.')
+  } else if (ponto && /^-?\d{1,3}(\.\d{3})+$/.test(texto)) {
+    texto = texto.replace(/\./g, '')
+  }
+
+  return Number(texto)
+}
+
 export const useUploadStore = defineStore('upload', {
   // STATE: informações armazenadas temporariamente
   state: () => ({
@@ -38,7 +65,9 @@ export const useUploadStore = defineStore('upload', {
     dadosOriginais: [],
     dadosTratados: [],
     erro: '',
-    dataUpload: null
+    dataUpload: null,
+    enviando: false,
+    resultadoEnvio: null
   }),
 
   // GETTERS: informações calculadas a partir dos dados
@@ -353,24 +382,25 @@ export const useUploadStore = defineStore('upload', {
             'faturamento_anual está em branco.'
           )
         } else {
-          let valor = novaLinha.faturamento_anual
-
-          if (typeof valor === 'string') {
-            valor = valor
-              .replace('R$', '')
-              .trim()
-              .replace(/\s/g, '')
-              .replace(/\./g, '')
-              .replace(',', '.')
-          }
-
-          const numero = Number(valor)
+          const numero = numeroMonetario(novaLinha.faturamento_anual)
 
           if (!Number.isFinite(numero)) {
             registrar(
               CATEGORIAS.PADRAO,
               'faturamento_anual',
               'faturamento_anual inválido.'
+            )
+          } else if (numero < 0) {
+            registrar(
+              CATEGORIAS.PADRAO,
+              'faturamento_anual',
+              'faturamento_anual não pode ser negativo.'
+            )
+          } else if (numero >= 1_000_000_000_000) {
+            registrar(
+              CATEGORIAS.PADRAO,
+              'faturamento_anual',
+              'faturamento_anual acima do limite permitido.'
             )
           } else {
             // A formatação em reais é feita só na hora de exibir
@@ -417,17 +447,20 @@ export const useUploadStore = defineStore('upload', {
               )
             }
           } else if (typeof valorData === 'string') {
-            const padraoData = /^\d{2}\/\d{2}\/\d{4}$/
+            const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valorData)
+            const brasileiro = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(valorData)
 
-            if (!padraoData.test(valorData)) {
+            if (!iso && !brasileiro) {
               registrar(
                 CATEGORIAS.PADRAO,
                 'data_contratacao',
-                'data_contratacao fora do padrão. Use DD/MM/AAAA.'
+                'data_contratacao fora do padrão. Use DD/MM/AAAA ou AAAA-MM-DD.'
               )
             } else {
-              const [dia, mes, ano] =
-                valorData.split('/').map(Number)
+              const partes = iso || brasileiro
+              const [ano, mes, dia] = iso
+                ? partes.slice(1).map(Number)
+                : [Number(partes[3]), Number(partes[2]), Number(partes[1])]
 
               const data = new Date(ano, mes - 1, dia)
 
@@ -441,6 +474,9 @@ export const useUploadStore = defineStore('upload', {
                   'data_contratacao',
                   'data_contratacao inválida.'
                 )
+              } else {
+                novaLinha.data_contratacao =
+                  `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`
               }
             }
           }
@@ -482,6 +518,42 @@ export const useUploadStore = defineStore('upload', {
       })
     },
 
+    async enviarAoBackend() {
+      if (!this.linhasValidas.length || this.enviando) return
+
+      this.erro = ''
+      this.enviando = true
+      this.resultadoEnvio = null
+
+      const texto = (valor) => valor == null ? '' : String(valor)
+      const linhas = this.linhasValidas.map((linha) => ({
+        numeroLinha: linha.numero_linha,
+        codigoCliente: texto(linha.codigo_cliente),
+        nomeCliente: texto(linha.nome_cliente),
+        consultor: texto(linha.consultor),
+        segmento: texto(linha.segmento),
+        nivelCliente: texto(linha.nivel_cliente),
+        faturamentoAnual: texto(linha.faturamento_anual),
+        servicosContratados: texto(linha.servicos_contratados),
+        dataContratacao: texto(linha.data_contratacao),
+        cidade: texto(linha.cidade),
+        uf: texto(linha.uf),
+      }))
+
+      try {
+        this.resultadoEnvio = await uploadService.enviarValidadas({
+          arquivoNome: this.arquivo?.name || 'planilha',
+          descartadas: this.totalComErro,
+          linhas,
+        })
+      } catch (erro) {
+        this.erro = mensagemDeErro(erro)
+        return false
+      } finally {
+        this.enviando = false
+      }
+    },
+
     // Limpa os dados armazenados
     limpar() {
       this.arquivo = null
@@ -489,6 +561,8 @@ export const useUploadStore = defineStore('upload', {
       this.dadosTratados = []
       this.erro = ''
       this.dataUpload = null
+      this.enviando = false
+      this.resultadoEnvio = null
     }
   }
 })

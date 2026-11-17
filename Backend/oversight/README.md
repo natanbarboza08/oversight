@@ -1,86 +1,25 @@
-# Backend — Spring Boot 3.5 + Java 21
+# Backend Java
 
-Faz só quatro coisas:
-1. **Login** com JWT (grava só a tabela `usuario`).
-2. **Valida** cada campo da planilha (DTO + `ClienteValidacaoService`).
-3. **Encaminha** as linhas válidas ao Python (`PythonEtlService`). Quem grava os dados é o Python.
-4. **Lê do banco** o resultado que o Python gravou e entrega aos gráficos (`DashboardService`).
+API Spring Boot 3.5 / Java 21. Ela implementa cadastro e login JWT, BCrypt, autorização, DTOs com validação, revalidação dos uploads, chamada autenticada ao FastAPI e leitura de dados persistidos para o dashboard.
 
-Não existe model nem repository de upload. Linhas com erro voltam em `rejeitadas` e não são gravadas.
+## Execução local
 
-## Rodar
-```
-cd backend
-copy .env.example .env      (Mac/Linux: cp .env.example .env)
-mvn spring-boot:run
-```
-Preencha no `.env` (no Neon: `DB_URL=jdbc:postgresql://HOST/BANCO?sslmode=require`, veja `../database/README.md`): `DB_URL`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `CORS_ORIGINS`, `ETL_URL`, `ETL_KEY`.
-Teste: http://localhost:8080/api/health → `{"status":"ok"}`.
-Na primeira vez ele cria as tabelas e o administrador (`admin@cti.local` / `Admin@12345`).
+Copie `.env.example` para `.env`, configure a conexão PostgreSQL, `JWT_SECRET` (mínimo 32 bytes), `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ETL_URL` e uma `ETL_KEY` que corresponda a `ETL_API_KEY` no serviço Python. A aplicação importa o arquivo `.env` local automaticamente.
 
-## Rotas
-| Rota | Quem | Para quê |
-|---|---|---|
-| `POST /api/auth/register` | todos | cria conta (fica PENDENTE) |
-| `POST /api/auth/login` | todos | devolve o token |
-| `GET /api/admin/usuarios` | ADMIN | lista usuários |
-| `PATCH /api/admin/usuarios/{id}/status` | ADMIN | aprova ou bloqueia |
-| `POST /api/uploads/validadas` | logado | valida e encaminha ao Python |
-| `GET /api/dashboard` | logado | último lote PROCESSADO + o JSON das contas (gráficos) |
-| `GET /api/dashboard?loteId=3` | logado | um lote específico |
-| `GET /api/dashboard/lotes` | logado | os 20 últimos lotes (caixa de escolha da tela) |
-| `GET /api/health` | todos | confere se o backend está ligado |
-
-## Pastas (`src/main/java/com/cti/provedor/`)
-```
-controller/   recebe o pedido HTTP: AuthController, AdminUsuarioController, UploadController, DashboardController, ErroHandler
-service/      regras de negócio: AuthService, UsuarioService, ClienteValidacaoService, UploadService, PythonEtlService, DashboardService
-              (+ ajudas da validação: Colunas, Datas, Padronizacao)
-repository/   fala com o banco (Spring Data JPA): UsuarioRepository
-model/        entidades (tabelas): Usuario, PerfilUsuario, StatusUsuario
-dto/          formato dos JSONs: ClienteDTO, UploadDtos, AuthDtos, UsuarioDto
-config/       configurações: SecurityConfig, JwtService, JwtAuthenticationFilter, UsuarioDetailsService,
-              AppProperties, AdminInicial, ApiException
-CtiProvedorApplication.java
-src/main/resources/application.properties   conexão com o banco (Neon/Azure) e outras configurações
+```powershell
+.\mvnw.cmd spring-boot:run
 ```
 
-## Mapa do backend: o que é cada arquivo (em uma frase)
+O banco precisa estar acessível; o esquema em `src/main/resources/schema.sql` é inicializado pelo Spring. O primeiro usuário ADMIN é criado na inicialização. Não existe senha padrão de administrador. `/api/health` verifica a API e `/api/ready` também executa `SELECT 1` no PostgreSQL.
 
-**Para ligar e configurar**
-- `CtiProvedorApplication` — o botão "ligar" do backend (`main`).
-- `application.properties` — as configurações: porta, banco, JWT, CORS, endereço do Python.
-- `schema.sql` — cria as tabelas no banco ao ligar.
-- `pom.xml` — lista as bibliotecas que o Maven baixa.
+## Rotas principais
 
-**Upload (o coração do projeto)** — o fluxo é: `UploadController` → `UploadService` → `ClienteValidacaoService` → `PythonEtlService`
-- `controller/UploadController` — recebe o POST do front.
-- `service/UploadService` — separa linhas válidas e rejeitadas e envia as válidas.
-- `service/ClienteValidacaoService` — valida cada campo de cada linha.
-- `service/PythonEtlService` — envia as linhas válidas ao Python (POST /etl).
-- `dto/UploadDtos`, `dto/ClienteDTO` — o formato do JSON do upload e de uma linha.
-- `service/Colunas`, `service/Padronizacao` — ajudas da validação (nomes das colunas e padronização de texto).
+- `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
+- `GET /api/admin/usuarios`, `PATCH /api/admin/usuarios/{id}/status` (ADMIN)
+- `POST /api/uploads/validadas` (autenticada)
+- `GET /api/dashboard`, `GET /api/dashboard/lotes` (autenticadas)
+- `GET /api/health`
 
-**Dashboard (gráficos)** — o fluxo é: `DashboardController` → `DashboardService` → banco
-- `controller/DashboardController` — as rotas `GET /api/dashboard` e `GET /api/dashboard/lotes`.
-- `service/DashboardService` — faz os `SELECT` nas tabelas `upload_lote` e `estatistica_lote` (com `JdbcTemplate`) e devolve `{ lote, geradoEm, estatisticas }`. O Java só **lê**: quem grava é o Python.
+## Railway
 
-**Login (JWT)**
-- `controller/AuthController` + `service/AuthService` — cadastro e login.
-- `controller/AdminUsuarioController` + `service/UsuarioService` — o administrador aprova ou bloqueia usuários.
-- `model/Usuario`, `model/PerfilUsuario`, `model/StatusUsuario`, `repository/UsuarioRepository` — a tabela `usuario`.
-- `dto/AuthDtos`, `dto/UsuarioDto` — formatos do login, do cadastro e do usuário na resposta.
-- `config/SecurityConfig`, `config/JwtService`, `config/JwtAuthenticationFilter`, `config/UsuarioDetailsService` — segurança e token.
-- `config/AdminInicial` — cria o primeiro administrador.
-
-**Apoio**
-- `controller/ErroHandler` + `config/ApiException` — todo erro volta como `{"erro": "mensagem"}`.
-- `config/AppProperties` — lê as configurações do `application.properties`.
-- `service/Datas` — ajuda com datas.
-
-Dica para estudar: comece pelo `UploadController` e siga a chamada. Cada arquivo tem no topo um quadro **SIMPLES** dizendo o que é, o que faz e quem chama.
-
-## Deploy
-`mvn clean package -DskipTests` e `java -jar target/cti-provedor-api.jar` com as variáveis do `.env` configuradas no serviço.
-
-Passo a passo completo: `../docs/BACKEND.txt`
+Use `Backend/oversight` como diretório raiz do serviço. O `Dockerfile` e `railway.json` fazem o build Java 21 e configuram o health check `/api/ready`. Defina no Railway as variáveis do `.env.example`, a URL pública da API Python em `ETL_URL`, a origem Vercel em `CORS_ORIGINS` e os valores Neon em `DB_URL`, `DB_USER` e `DB_PASSWORD`. Nunca envie arquivos `.env` ao repositório.
